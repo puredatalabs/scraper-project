@@ -27,7 +27,7 @@ SEARCH_QUERIES = [
     "seo agency Veliko Burgas"
 ]
 
-TEST_LIMIT = 5
+TEST_LIMIT = None
 CONCURRENT_PAGES = 5
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
