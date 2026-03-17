@@ -4,7 +4,7 @@ import re
 from urllib.parse import urljoin, urlparse
 
 cities = [
-    "Plovdiv","Varna","Burgas","Ruse","Stara Zagora",
+    "Sofia","Plovdiv","Varna","Burgas","Ruse","Stara Zagora",
     "Veliko Tarnovo","Blagoevgrad"
 ]
 
@@ -17,7 +17,7 @@ services = [
 
 SEARCH_QUERIES = [f"{service} {city}" for city in cities for service in services]
 
-TEST_LIMIT = 5
+TEST_LIMIT = 5  # set None for full run
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
@@ -33,6 +33,16 @@ def extract_domain(url):
         return urlparse(url).netloc.lower().replace("www.", "")
     except:
         return ""
+
+
+def safe_goto(page, url, retries=2):
+    for attempt in range(retries):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            return True
+        except:
+            print(f"Retrying {url} (attempt {attempt+1})")
+    return False
 
 
 def scroll_until_end(page):
@@ -82,7 +92,7 @@ def extract_email_from_html(html):
         if not any(x in email for x in ["png", "jpg", "jpeg", "svg", "example"]):
             return email
     return ""
-
+    
 
 def scrape_email(context, website):
     if not website:
@@ -93,7 +103,10 @@ def scrape_email(context, website):
     try:
         page.set_default_timeout(8000)
 
-        page.goto(website)
+        if not safe_goto(page, website):
+            page.close()
+            return ""
+
         html = page.content()
         email = extract_email_from_html(html)
 
@@ -101,15 +114,15 @@ def scrape_email(context, website):
             page.close()
             return email
 
-        # only 1 extra page
+        # Try contact page
         try:
-            page.goto(urljoin(website, "/contact"))
-            html = page.content()
-            email = extract_email_from_html(html)
-
-            if email:
-                page.close()
-                return email
+            contact_url = urljoin(website, "/contact")
+            if safe_goto(page, contact_url):
+                html = page.content()
+                email = extract_email_from_html(html)
+                if email:
+                    page.close()
+                    return email
         except:
             pass
 
@@ -123,10 +136,7 @@ def scrape_email(context, website):
 def scrape_place(context, url):
     page = context.new_page()
 
-    try:
-        page.set_default_timeout(10000)
-        page.goto(url, wait_until="domcontentloaded")
-    except:
+    if not safe_goto(page, url):
         page.close()
         return None
 
@@ -185,7 +195,8 @@ def main():
 
         browser = p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            slow_mo=50  # helps stability on VM
         )
 
         context = browser.new_context()
@@ -195,8 +206,21 @@ def main():
             print("\nSearching:", query)
 
             page = context.new_page()
-            page.goto(f"https://www.google.com/maps/search/{query.replace(' ','+')}")
-            page.wait_for_selector('div[role="feed"]')
+
+            search_url = f"https://www.google.com/maps/search/{query.replace(' ','+')}"
+
+            if not safe_goto(page, search_url):
+                page.close()
+                continue
+
+            page.wait_for_timeout(3000)
+
+            try:
+                page.wait_for_selector('div[role="feed"]', timeout=15000)
+            except:
+                print("Feed not found, skipping...")
+                page.close()
+                continue
 
             scroll_until_end(page)
             links = collect_links(page)
@@ -223,6 +247,8 @@ def main():
                     all_results.append(result)
 
             pd.DataFrame(results).to_csv(f"maps_{query.replace(' ','_')}.csv", index=False)
+
+            page.close()
 
         browser.close()
 
