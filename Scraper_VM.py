@@ -4,7 +4,7 @@ import re
 from urllib.parse import urljoin, urlparse
 
 cities = [
-    "Sofia","Plovdiv","Varna","Burgas","Ruse","Stara Zagora",
+    "Plovdiv","Varna","Burgas","Ruse","Stara Zagora",
     "Veliko Tarnovo","Blagoevgrad"
 ]
 
@@ -17,7 +17,7 @@ services = [
 
 SEARCH_QUERIES = [f"{service} {city}" for city in cities for service in services]
 
-TEST_LIMIT = 5  # set None for full run
+TEST_LIMIT = None  # set None for full run
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
