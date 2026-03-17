@@ -2,7 +2,6 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 import re
 from urllib.parse import urljoin, urlparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 cities = [
     "Plovdiv","Varna","Burgas","Ruse","Stara Zagora",
@@ -18,11 +17,9 @@ services = [
 
 SEARCH_QUERIES = [f"{service} {city}" for city in cities for service in services]
 
-TEST_LIMIT = 5  # 🔥 SET None FOR FULL RUN
+TEST_LIMIT = 5
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-
-CONTACT_PATHS = ["/contact"]  # 🔥 reduced for speed
 
 
 def clean_text(text):
@@ -48,7 +45,7 @@ def scroll_until_end(page):
         if (feed) feed.scrollBy(0, 6000);
         """)
 
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1200)
 
         count = page.locator("div.Nv2PK").count()
 
@@ -59,7 +56,7 @@ def scroll_until_end(page):
 
         previous = count
 
-        if stable >= 6:
+        if stable >= 5:
             break
 
 
@@ -87,7 +84,7 @@ def extract_email_from_html(html):
     return ""
 
 
-def scrape_email_fast(context, website):
+def scrape_email(context, website):
     if not website:
         return ""
 
@@ -104,10 +101,9 @@ def scrape_email_fast(context, website):
             page.close()
             return email
 
-        # Only one extra page
+        # only 1 extra page
         try:
-            url = urljoin(website, "/contact")
-            page.goto(url)
+            page.goto(urljoin(website, "/contact"))
             html = page.content()
             email = extract_email_from_html(html)
 
@@ -167,7 +163,7 @@ def scrape_place(context, url):
 
     page.close()
 
-    email = scrape_email_fast(context, website) if website else ""
+    email = scrape_email(context, website)
 
     return {
         "company_name": name,
@@ -179,24 +175,6 @@ def scrape_place(context, url):
         "email": email,
         "maps_url": url
     }
-
-
-def scrape_parallel(context, links):
-    results = []
-
-    with ThreadPoolExecutor(max_workers=5) as executor:  # 🔥 PARALLELISM
-        futures = [executor.submit(scrape_place, context, link) for link in links]
-
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                if result:
-                    print("Collected:", result["company_name"])
-                    results.append(result)
-            except:
-                pass
-
-    return results
 
 
 def main():
@@ -226,16 +204,23 @@ def main():
             if TEST_LIMIT:
                 links = links[:TEST_LIMIT]
 
-            print(f"Processing {len(links)} companies in parallel...")
+            print(f"Processing {len(links)} companies...")
 
-            results = scrape_parallel(context, links)
+            results = []
 
-            for result in results:
-                domain = extract_domain(result["website"])
-                if domain and domain in seen_domains:
-                    continue
-                seen_domains.add(domain)
-                all_results.append(result)
+            for link in links:
+                result = scrape_place(context, link)
+
+                if result:
+                    print("Collected:", result["company_name"])
+
+                    domain = extract_domain(result["website"])
+                    if domain and domain in seen_domains:
+                        continue
+
+                    seen_domains.add(domain)
+                    results.append(result)
+                    all_results.append(result)
 
             pd.DataFrame(results).to_csv(f"maps_{query.replace(' ','_')}.csv", index=False)
 
