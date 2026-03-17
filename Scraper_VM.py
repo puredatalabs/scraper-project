@@ -6,7 +6,25 @@ from urllib.parse import urlparse
 
 SEARCH_QUERIES = [
     "seo agency Sofia",
-    "marketing agency Sofia"
+    "marketing agency Sofia",
+    "advertising agency Sofia",
+    "web design agency Sofia",
+    "seo agency Plovdiv",
+    "marketing agency Plovdiv",
+    "advertising agency Plovdiv",
+    "web design agency Plovdiv",
+    "seo agency Varna",
+    "marketing agency Varna",
+    "advertising agency Varna",
+    "web design agency Varna",
+    "seo agency Veliko Turnovo",
+    "marketing agency Veliko Turnovo",
+    "advertising agency Veliko Turnovo",
+    "web design agency Veliko Turnovo",
+    "marketing agency Burgas",
+    "advertising agency Burgas",
+    "web design agency Burgas",
+    "seo agency Veliko Burgas"
 ]
 
 TEST_LIMIT = 5
