@@ -9,7 +9,7 @@ SEARCH_QUERIES = [
     "marketing agency Sofia"
 ]
 
-TEST_LIMIT = 20
+TEST_LIMIT = 5
 CONCURRENT_PAGES = 5
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
@@ -34,10 +34,26 @@ async def block_resources(route):
         await route.continue_()
 
 
+# ✅ SMART SCROLL (IMPORTANT FIX)
 async def scroll(page):
-    for _ in range(6):
-        await page.mouse.wheel(0, 5000)
-        await page.wait_for_timeout(800)
+    previous_count = 0
+    stable_rounds = 0
+
+    while True:
+        await page.mouse.wheel(0, 6000)
+        await page.wait_for_timeout(1000)
+
+        count = await page.locator("div.Nv2PK").count()
+
+        if count == previous_count:
+            stable_rounds += 1
+        else:
+            stable_rounds = 0
+
+        previous_count = count
+
+        if stable_rounds >= 5:
+            break
 
 
 async def collect_links(page):
@@ -105,9 +121,21 @@ async def scrape_query(context, query):
     page = await context.new_page()
 
     url = f"https://www.google.com/maps/search/{query.replace(' ','+')}"
-    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    except:
+        await page.close()
+        return []
 
     await page.wait_for_timeout(3000)
+
+    try:
+        await page.wait_for_selector('div[role="feed"]', timeout=15000)
+    except:
+        await page.close()
+        return []
+
     await scroll(page)
 
     links = await collect_links(page)
@@ -119,7 +147,6 @@ async def scrape_query(context, query):
 
     semaphore = asyncio.Semaphore(CONCURRENT_PAGES)
 
-    # 🔥 PARALLEL MAPS SCRAPING
     tasks = [scrape_place(context, link, semaphore) for link in links]
     results = await asyncio.gather(*tasks)
 
