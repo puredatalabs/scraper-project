@@ -1,7 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pandas as pd
 import re
-import time
 from urllib.parse import urljoin, urlparse
 
 cities = [
@@ -18,7 +17,7 @@ services = [
 
 SEARCH_QUERIES = [f"{service} {city}" for city in cities for service in services]
 
-TEST_LIMIT = None  # set to small number for testing
+TEST_LIMIT = None
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
@@ -33,31 +32,33 @@ CONTACT_PATHS = [
 def clean_text(text):
     if not text:
         return ""
-    return re.sub(r'^[^\w\+]+', '', text.strip())
+    text = text.strip()
+    text = re.sub(r'^[^\w\+]+', '', text)
+    return text
 
 
 def extract_domain(url):
     try:
-        domain = urlparse(url).netloc.lower().replace("www.", "")
-        return domain
+        domain = urlparse(url).netloc.lower()
+        return domain.replace("www.", "")
     except:
         return ""
 
 
 def scroll_until_end(page):
     print("Scrolling results...")
-
     previous = 0
     stable = 0
 
     while True:
         page.evaluate("""
         const feed = document.querySelector('div[role="feed"]');
-        if (feed) feed.scrollBy(0, 6000);
+        if (feed) {
+            feed.scrollBy(0, 6000);
+        }
         """)
 
-        page.wait_for_timeout(2500)
-
+        page.wait_for_timeout(3000)
         count = page.locator("div.Nv2PK").count()
         print("Listings loaded:", count)
 
@@ -68,8 +69,8 @@ def scroll_until_end(page):
 
         previous = count
 
-        if stable >= 10:
-            print("End reached")
+        if stable >= 12:
+            print("End of results reached")
             break
 
 
@@ -92,14 +93,15 @@ def collect_links(page):
 
 def extract_email_from_html(html):
     emails = re.findall(EMAIL_REGEX, html)
+    filtered = []
 
     for email in emails:
         email = email.lower()
         if any(x in email for x in ["png", "jpg", "jpeg", "svg", "example"]):
             continue
-        return email
+        filtered.append(email)
 
-    return ""
+    return filtered[0] if filtered else ""
 
 
 def scrape_emails_from_site(context, website):
@@ -109,20 +111,25 @@ def scrape_emails_from_site(context, website):
     page = context.new_page()
 
     try:
-        page.goto(website, timeout=15000)
+        page.goto(website, timeout=20000)
         page.wait_for_timeout(2000)
 
-        email = extract_email_from_html(page.content())
+        html = page.content()
+        email = extract_email_from_html(html)
+
         if email:
             page.close()
             return email
 
         for path in CONTACT_PATHS:
             try:
-                page.goto(urljoin(website, path), timeout=10000)
-                page.wait_for_timeout(1500)
+                url = urljoin(website, path)
+                page.goto(url, timeout=15000)
+                page.wait_for_timeout(2000)
 
-                email = extract_email_from_html(page.content())
+                html = page.content()
+                email = extract_email_from_html(html)
+
                 if email:
                     page.close()
                     return email
@@ -140,8 +147,8 @@ def scrape_place(context, url):
     page = context.new_page()
 
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20000)
-        page.wait_for_selector("h1", timeout=8000)
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_selector("h1", timeout=10000)
     except:
         page.close()
         return None
@@ -153,27 +160,33 @@ def scrape_place(context, url):
 
     try:
         rating_block = page.locator("div.F7nice").inner_text()
-        rating = re.search(r'([0-9.]+)', rating_block)
-        reviews = re.search(r'\(([\d,]+)\)', rating_block)
+        rating_match = re.search(r'([0-9.]+)', rating_block)
+        reviews_match = re.search(r'\(([\d,]+)\)', rating_block)
 
-        rating = rating.group(1) if rating else ""
-        reviews = reviews.group(1).replace(",", "") if reviews else ""
+        rating = rating_match.group(1) if rating_match else ""
+        reviews = reviews_match.group(1).replace(",", "") if reviews_match else ""
     except:
         rating = ""
         reviews = ""
 
     try:
-        address = clean_text(page.locator('button[data-item-id="address"]').inner_text())
+        address = clean_text(
+            page.locator('button[data-item-id="address"]').inner_text()
+        )
     except:
         address = ""
 
     try:
-        phone = clean_text(page.locator('button[data-item-id^="phone"]').inner_text())
+        phone = clean_text(
+            page.locator('button[data-item-id^="phone"]').inner_text()
+        )
     except:
         phone = ""
 
     try:
-        website = page.locator('a[data-item-id="authority"]').get_attribute("href")
+        website = page.locator(
+            'a[data-item-id="authority"]'
+        ).get_attribute("href")
     except:
         website = ""
 
@@ -181,7 +194,7 @@ def scrape_place(context, url):
 
     email = ""
     if website:
-        print("Scanning:", website)
+        print("Scanning website:", website)
         email = scrape_emails_from_site(context, website)
 
     return {
@@ -205,12 +218,7 @@ def main():
 
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--single-process"
-            ]
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
 
         context = browser.new_context()
@@ -218,53 +226,56 @@ def main():
         for query in SEARCH_QUERIES:
             page = context.new_page()
 
-            print("\nSearching:", query)
-            page.goto(f"https://www.google.com/maps/search/{query.replace(' ', '+')}")
+            search = query.replace(" ", "+")
+            url = f"https://www.google.com/maps/search/{search}"
 
+            print("\nSearching:", query)
+
+            page.goto(url)
             page.wait_for_selector('div[role="feed"]')
 
             scroll_until_end(page)
             links = collect_links(page)
 
+            print("Scraping companies...")
             query_results = []
 
             for link in links:
-
                 if TEST_LIMIT and len(query_results) >= TEST_LIMIT:
                     break
 
                 result = scrape_place(context, link)
 
                 if result:
-                    domain = extract_domain(result["website"])
+                    website = result["website"]
+                    domain = extract_domain(website)
 
                     if domain:
                         if domain in seen_domains:
                             continue
                         seen_domains.add(domain)
                     else:
-                        key = result["company_name"] + result["location"]
-                        if key in seen_fallback:
+                        fallback_key = result["company_name"] + result["location"]
+                        if fallback_key in seen_fallback:
                             continue
-                        seen_fallback.add(key)
+                        seen_fallback.add(fallback_key)
 
                     query_results.append(result)
                     all_results.append(result)
 
                     print("Collected:", result["company_name"])
 
-                time.sleep(2)  # VERY IMPORTANT for stability
-
             filename = f"maps_{query.replace(' ','_')}.csv"
             pd.DataFrame(query_results).to_csv(filename, index=False)
             print("Saved:", filename)
 
-            page.close()
-
+        context.close()
         browser.close()
 
-    pd.DataFrame(all_results).to_csv("maps_ALL_QUERIES.csv", index=False)
-    print("Total:", len(all_results))
+    df_all = pd.DataFrame(all_results)
+    df_all.to_csv("maps_ALL_QUERIES.csv", index=False)
+
+    print("\nTotal unique companies scraped:", len(df_all))
 
 
 if __name__ == "__main__":
