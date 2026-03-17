@@ -17,7 +17,7 @@ services = [
 
 SEARCH_QUERIES = [f"{service} {city}" for city in cities for service in services]
 
-TEST_LIMIT = None
+TEST_LIMIT = 5
 
 EMAIL_REGEX = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
